@@ -1,0 +1,288 @@
+﻿@using Newtonsoft.Json
+@using TreeStructure.Domain.Models
+@model List<NodeElement>
+
+@{
+    ViewData["Title"] = "Index";
+    var rawJson = Html.Raw(JsonConvert.SerializeObject(Model));
+}
+
+<h1>Tree structure</h1>
+
+<script type="text/x-template" id="item-template">
+    <li>
+        <div class="unselectable my-button"
+             style="width: fit-content;"
+             v-on:click="select(item)">
+            <span v-if="item.name">{{ item.name }}</span>
+            <span v-else>MAIN</span>
+            <span v-if="isFolder" v-on:click="toggle" style="cursor: pointer">[{{ isOpen ? '^' : '>' }}]</span>
+            <span v-if="isFolder" v-on:click="toggleOne" style="cursor: pointer">[{{ isOpen ? '-' : '+' }}]</span>
+        </div>
+        <ul v-show="isOpen" v-if="isFolder" >
+            <tree-item class="item"
+                       v-for="(child, index) in item.nodeElements"
+                       :item="child"
+                       :key="index"
+                       ref="children"
+                       v-on:changetitle="$emit('changetitle', $event)">
+            </tree-item>
+        </ul>
+    </li>
+</script>
+
+<br/>
+
+<div id="main">
+    <div class="btn-block">
+        <input type="text" ref="anyName" placeholder="Enter a node name" v-model="newItemName">
+        <button class="btn btn-outline-secondary change-button" v-on:click="addItem">Add new node</button>
+        <button class="btn btn-outline-secondary change-button" v-on:click="editItem">Edit selected node</button>
+        <button class="btn btn-outline-secondary change-button" v-on:click="deleteItem">Delete selected node</button>
+    </div>
+    <div class="btn-block">
+        <input ref="labelNode" v-model="nodeToChangeName" disabled />
+        <button type="submit" class="btn btn-outline-secondary change-button" v-on:click="setNodeToChange">Change node of current selected</button>
+        <button type="submit" class="btn btn-outline-secondary change-button" v-on:click="changeNode">Apply new selected node</button>
+    </div>
+
+    <br/>
+    <ul style="list-style-image: url('/icon.png');">
+        <tree-item class="item"
+                   v-on:changetitle="updateTitle($event)"
+                   :item="treeData">
+        </tree-item>
+    </ul>
+
+</div>
+
+<style>
+    .blackBack {
+        color: #fff;
+        background-color: #6c757d;
+        border-color: #6c757d;
+        opacity: 0.8;
+    }
+</style>
+
+<script>
+    Vue.component("tree-item",
+        {
+            template: "#item-template",
+            props: {
+                item: Object
+            },
+            data() {
+                return {
+                    isOpen: false
+                }
+            },
+            computed: {
+                isFolder() {
+                    return this.item.nodeElements && this.item.nodeElements.length;
+                }
+            },
+            methods: {
+                select(item) {
+                    this.$emit('changetitle', item);
+                },
+                toggleOne() {
+                    if (this.isFolder) {
+                        this.isOpen = !this.isOpen;
+                    }
+                },
+                toggle: function () {
+                    this.isOpen ? this.doClose() : this.doOpen();
+                },
+                doClose() {
+                    if (this.isFolder) {
+                        this.$refs.children.forEach((c) => c.doClose());
+                        this.isOpen = false;
+                    }
+                },
+                doOpen() {
+                    if (this.isFolder) {
+                        this.$refs.children.forEach((c) => c.doOpen());
+                        this.isOpen = true;
+                    }
+                },
+            }
+        });
+
+    var main = new Vue({
+        el: "#main",
+        data: {
+            treeData: {
+                nodeElements: @rawJson,
+                element: ""
+            },
+            currentItemId: null,
+            currentItemName: null,
+            nodeToChange: null,
+            nodeToChangeName: null,
+            newItemName: null
+        },
+        watch: {
+            treeData() {
+                main.$forceUpdate();
+            }
+        },
+        methods: {
+            updateTitle(value) {
+                this.currentItemId = value.id;
+                this.currentItemName = value.name;
+            },
+            setNodeToChange() {
+                this.nodeToChange = this.currentItemId;
+                this.nodeToChangeName = this.currentItemName;
+            },
+            fetchData() {
+                fetch('/Home/GetData',
+                        {
+                            method: 'get',
+                        })
+                    .then((response) => response.json())
+                    .then((data) => {
+                        this.treeData.nodeElements = data;
+                    })
+                    .catch(error => { });
+            },
+            addItem() {
+                if (!this.newItemName) {
+                    alert("Name is required!");
+                    return;
+                }
+                if (!this.currentItemId && !this.treeData.nodeElements) {
+                    alert("Select parent!");
+                    return;
+                }
+                this.$refs["anyName"].value = "";
+                fetch('/Home/AddNode',
+                        {
+                            method: 'post',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ "name": this.newItemName, "parentId": this.currentItemId })
+                        })
+                    .then(response => {
+                        this.fetchData();
+                        this.newItemName = null;
+                    })
+                    .catch(error => { });
+            },
+            editItem() {
+                if (!this.newItemName) {
+                    alert("Name is required!");
+                    return;
+                }
+                if (!this.currentItemId) {
+                    alert("Select item to edit!");
+                    return;
+                }
+                this.$refs["anyName"].value = "";
+                fetch('/Home/EditNode',
+                        {
+                            method: 'put',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ "id": this.currentItemId, "name": this.newItemName })
+                        })
+                    .then(response => {
+                        this.fetchData();
+                        this.newItemName = null;
+                    })
+                    .catch(error => { });
+            },
+            deleteItem() {
+                if (!this.currentItemId) {
+                    alert("Select item to delete!");
+                    return;
+                }
+                fetch('/Home/DeleteNode',
+                        {
+                            method: 'delete',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: this.currentItemId
+                        })
+                    .then(response => {
+                        this.fetchData();
+                    })
+                    .catch(error => { });
+            },
+            changeNode() {
+                if (!this.nodeToChange) {
+                    alert("Node to change is required!");
+                    return;
+                }
+                if (!this.currentItemId) {
+                    alert("New parent is required!");
+                    return;
+                }
+                this.$refs["labelNode"].value = "";
+                fetch('/Home/ChangeNode',
+                        {
+                            method: 'post',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ "id": this.nodeToChange, "parentId": this.currentItemId })
+                        })
+                    .then(response => {
+                        this.fetchData();
+                    })
+                    .catch(error => { });
+            }
+
+        }
+    });
+
+    (function () {
+        var myButtons = document.querySelectorAll('.my-button');
+        console.log(myButtons);
+        for (var i = 0; i < myButtons.length; i++) {
+
+            var button = myButtons[i];
+
+            button.addEventListener('click', function (event) {
+                var x = document.querySelectorAll(".blackBack");
+                if (x.length) {
+                    x[0].classList.remove('blackBack');
+                }
+                this.classList.toggle("blackBack");
+            });
+        }
+        ;
+        var myChangeButtons = document.querySelectorAll('.change-button');
+        for (var j = 0; j < myChangeButtons.length; j++) {
+
+            var changeButton = myChangeButtons[j];
+
+            changeButton.addEventListener('click', function (event) {
+                setTimeout(function () {
+                        var myButtons = document.querySelectorAll('.my-button');
+                        console.log(myButtons);
+                        for (var i = 0; i < myButtons.length; i++) {
+
+                            var button = myButtons[i];
+
+                            button.addEventListener('click',
+                                function (event) {
+                                    var x = document.querySelectorAll(".blackBack");
+                                    if (x.length) {
+                                        x[0].classList.remove('blackBack');
+                                    }
+                                    this.classList.toggle("blackBack");
+                                });
+                        }
+                    },
+                    500);
+
+            });
+        }
+
+    })();
+</script>
